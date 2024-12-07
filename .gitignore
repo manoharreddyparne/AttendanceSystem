@@ -1,11 +1,21 @@
-# Ignore the virtual environment folder
+# Ignore the 'env' folder
 env/
 
-# Ignore Python bytecode files and folders
-*.pyc
+# Ignore Python bytecode files
 __pycache__/
+*.pyc
 
-# Ignore log, database, and other unnecessary files
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore IDE specific files (e.g., for VS Code, PyCharm, etc.)
+.vscode/
+.idea/
+
+# Ignore other common files/folders
 *.log
-*.db
-*.sqlite
+*.bak
+*.swp
+
+# Ignore the requirements.txt file if not used to track dependencies
+# requirements.txt
