@@ -1,4 +1,4 @@
-# Ignore the 'env' folder
+# Ignore the 'env' folder (virtual environment)
 env/
 
 # Ignore Python bytecode files
@@ -19,3 +19,13 @@ __pycache__/
 
 # Ignore the requirements.txt file if not used to track dependencies
 # requirements.txt
+
+# Ignore the TrainingImage folder content (but not the folder itself)
+TrainingImage/*
+!TrainingImage/
+
+# Ignore the Trainner.yml file content
+TrainingImageLabel/Trainner.yml
+
+# Ignore student_data.csv content (but not the file itself)
+StudentDetails/student_data.csv

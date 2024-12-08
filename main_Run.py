@@ -62,6 +62,15 @@ def augment_image(image):
 
     return [flipped, rotated, bright]
 
+# Function to check if the enrollment already exists in the student data CSV
+def check_duplicate_registration(enrollment):
+    if not os.path.exists(STUDENT_DETAILS_PATH):
+        return False
+    df = pd.read_csv(STUDENT_DETAILS_PATH)
+    if enrollment in df['Enrollment'].values:
+        return True
+    return False
+
 # Function to capture and save training images
 def take_images():
     enrollment = enrollment_input.get()
@@ -101,6 +110,12 @@ def take_images():
         for (top, right, bottom, left) in face_locations:
             sampleNum += 1
             file_name = f"{TRAINING_IMAGE_PATH}/{enrollment}_{name}_{sampleNum}.jpg"
+            
+            # Check if the image already exists
+            if os.path.exists(file_name):
+                show_error(f"Image already exists for Enrollment: {enrollment} and Name: {name}")
+                return
+
             cv2.imwrite(file_name, processed_img[top:bottom, left:right])  # Save the processed image
             cv2.rectangle(img, (left, top), (right, bottom), (255, 0, 0), 2)
 
@@ -117,25 +132,26 @@ def take_images():
     
     show_success(f"Images saved for Enrollment: {enrollment}, Name: {name}")
 
-# Check if enrollment is already registered
-def check_duplicate_registration(enrollment):
-    df = pd.read_csv(STUDENT_DETAILS_PATH)
-    if enrollment in df['Enrollment'].values:
-        return True
-    return False
-
-# Enhance image for clarity
-def enhance_image(img):
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
-    enhanced_img = clahe.apply(gray)
-    return enhanced_img
-
-# Extract face features using face_recognition
-def extract_features(image):
-    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    encodings = face_recognition.face_encodings(rgb_image)
-    return encodings[0] if encodings else None
+# Function to save the student details to student_data.csv after training
+def save_student_data(enrollment, name):
+    try:
+        # Read existing data from student_data.csv
+        if os.path.exists("StudentDetails/student_data.csv"):
+            df = pd.read_csv("StudentDetails/student_data.csv")
+            
+            # Check if the record already exists in the CSV
+            if enrollment in df['Enrollment'].values:
+                show_error(f"Enrollment {enrollment} is already registered!")
+                return False  # Return False if the record exists
+            
+        # If the record doesn't exist, append it to the CSV
+        with open("StudentDetails/student_data.csv", 'a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([enrollment, name])
+        return True  # Return True after successfully saving the data
+    except Exception as e:
+        show_error(f"Error saving student data: {str(e)}")
+        return False
 
 # Function to train the model using LBPH
 def train_images():
@@ -163,6 +179,11 @@ def train_images():
     os.makedirs(TRAINING_LABEL_PATH, exist_ok=True)
     recognizer.save(f"{TRAINING_LABEL_PATH}/Trainner.yml")  # Save the trained model
     show_success("Model trained successfully!")
+# Extract face features using face_recognition
+def extract_features(image):
+    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    encodings = face_recognition.face_encodings(rgb_image)
+    return encodings[0] if encodings else None
 
 # Function for automatic attendance with retry on timeout
 def automatic_attendance():
@@ -254,6 +275,7 @@ def automatic_attendance():
     # Save the attendance log to CSV again after loop ends
     attendance.to_csv(ATTENDANCE_LOG_PATH, index=False, mode='a', header=not os.path.exists(ATTENDANCE_LOG_PATH))
     show_success("Attendance logged successfully!")
+
 # GUI components
 enrollment_label = tk.Label(window, text="Enter Enrollment: ", bg="lightgrey", font=('times', 15))
 enrollment_label.place(x=200, y=200)
