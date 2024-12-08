@@ -20,12 +20,12 @@ __pycache__/
 # Ignore the requirements.txt file if not used to track dependencies
 # requirements.txt
 
-# Ignore all contents of the TrainingImage folder, but not the folder itself
+# Ignore all files inside the TrainingImage folder, but not the folder itself
 TrainingImage/*
 !TrainingImage/
 
-# Track empty Trainner.yml file (ignore its contents)
+# Track the empty Trainner.yml file (ignore its contents)
 TrainingImageLabel/Trainner.yml
 
-# Track empty student_data.csv file (ignore its contents)
+# Track the empty student_data.csv file (ignore its contents)
 StudentDetails/student_data.csv
