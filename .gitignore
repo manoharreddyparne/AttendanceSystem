@@ -24,8 +24,8 @@ __pycache__/
 TrainingImage/*
 !TrainingImage/
 
-# Ignore the contents of the Trainner.yml file, but keep the empty file tracked
+# Track empty Trainner.yml file (ignore its contents)
 TrainingImageLabel/Trainner.yml
 
-# Ignore the contents of the student_data.csv file, but keep the empty file tracked
+# Track empty student_data.csv file (ignore its contents)
 StudentDetails/student_data.csv
