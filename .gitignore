@@ -1,25 +1,5 @@
 # Ignore the 'env' folder
 env/
-
-# Ignore Python bytecode files
-__pycache__/
-*.pyc
-
-# Ignore Jupyter Notebook checkpoints
-.ipynb_checkpoints/
-
 # Ignore IDE specific files (e.g., for VS Code, PyCharm, etc.)
 .vscode/
 .idea/
-
-# Ignore other common files/folders
-*.log
-*.bak
-*.swp
-
-# Ignore the requirements.txt file if not used to track dependencies
-# requirements.txt
-# Ignore all contents inside TrainingImage but not the folder itself
-TrainingImage/*
-!TrainingImage/.gitkeep
-
