@@ -19,3 +19,7 @@ __pycache__/
 
 # Ignore the requirements.txt file if not used to track dependencies
 # requirements.txt
+# Ignore all contents inside TrainingImage but not the folder itself
+TrainingImage/*
+!TrainingImage/.gitkeep
+
