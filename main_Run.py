@@ -316,7 +316,6 @@ def log_attendance(enrollment, name, today_date, present=True):
     return f"Attendance marked for {name} on {today_date}."
 
 # Function to handle retry logic if recognition fails
-# Function to handle retry logic if recognition fails
 def handle_failed_recognition():
     global retry_count, failed_to_recognize
 
@@ -460,3 +459,4 @@ quit_btn = tk.Button(window, text="Quit", command=window.destroy, bg="red", fg="
 quit_btn.place(x=800, y=300)
 
 window.mainloop()
+    
