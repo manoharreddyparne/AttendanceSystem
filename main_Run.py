@@ -4,7 +4,7 @@ import cv2
 import csv
 import os
 import numpy as np
-from PIL import Image
+from PIL import ImageTk, Image
 import pandas as pd
 import datetime
 import time
@@ -15,13 +15,23 @@ HAARCASCADE_PATH = "haarcascades/haarcascade_frontalface_default.xml"
 TRAINING_IMAGE_PATH = "TrainingImage/"
 TRAINING_LABEL_PATH = "TrainingImageLabel/"
 STUDENT_DETAILS_PATH = "StudentDetails/student_data.csv"
-ATTENDANCE_LOG_PATH = "Attendance/Auto_Attendance_Logs/attendance_log.csv"
+ATTENDANCE_LOG_PATH = "Attendance/Auto_Attendance_Logs/"
 
 # Main Window setup
 window = tk.Tk()
 window.title("Attendance Management System")
 window.geometry('1280x720')
 window.configure(background='lightgrey')
+
+# Define log_label globally so it's accessible across functions
+log_label = tk.Label(window, text="", bg="lightgrey", fg="green", font=('times', 12, 'bold'))
+log_label.place(x=800, y=275)  # Adjust the position as needed
+
+# Global variables
+log_shown = False
+attendance_logged = False
+failed_to_recognize = False  # Define this variable here globally
+retry_count = 0
 
 # Helper function to show error messages
 def show_error(message):
@@ -132,7 +142,90 @@ def take_images():
     
     show_success(f"Images saved for Enrollment: {enrollment}, Name: {name}")
 
-# Function to save the student details to student_data.csv after training
+def train_images():
+    recognizer = cv2.face.LBPHFaceRecognizer_create()  # Using LBPH model for training
+    imagePaths = [os.path.join(TRAINING_IMAGE_PATH, f) for f in os.listdir(TRAINING_IMAGE_PATH)]
+    
+    face_samples = []
+    ids = []
+
+    for imagePath in imagePaths:
+        try:
+            img = Image.open(imagePath).convert('L')  # Convert image to grayscale
+            imageNp = np.array(img, 'uint8')  # Convert to NumPy array
+            
+            filename = os.path.basename(imagePath)
+            enrollment_id = int(filename.split("_")[0])  # Extract enrollment ID
+
+            face_locations = face_recognition.face_locations(imageNp)
+
+            if len(face_locations) == 0:
+                print(f"Warning: No face detected in {filename}. Skipping...")
+                continue
+
+            for (top, right, bottom, left) in face_locations:
+                face_samples.append(imageNp[top:bottom, left:right])  # Store grayscale face
+                ids.append(enrollment_id)
+
+        except Exception as e:
+            print(f"Error processing image {imagePath}: {e}")
+
+    if len(face_samples) == 0:
+        show_error("No faces found in training images. Please ensure that the images are correctly placed and contain faces.")
+        return
+
+    recognizer.train(face_samples, np.array(ids))  # Train the model
+    os.makedirs(TRAINING_LABEL_PATH, exist_ok=True)
+    model_path = f"{TRAINING_LABEL_PATH}/Trainner.yml"
+    recognizer.save(model_path)  # Save the trained model
+
+    show_success(f"Model trained successfully! The model has been saved to {model_path}.")
+
+# Define global variables for video label, close button, and webcam frame
+video_label = None
+close_btn = None
+webcam_frame = None
+
+# Initialize cam as None
+cam = None
+def close_webcam():
+    global cam, video_label, close_btn, webcam_frame, running
+
+    # Stop the webcam feed and release the camera only if it was opened
+    if cam is not None and cam.isOpened():
+        cam.release()
+
+    cv2.destroyAllWindows()
+
+    # Destroy the webcam and other UI elements
+    if video_label:
+        video_label.destroy()
+    if webcam_frame:
+        webcam_frame.destroy()
+    if close_btn:
+        close_btn.destroy()
+
+    # Reset the running flag to stop processing frames
+    running = False
+
+    # Re-enable the UI components (buttons and inputs)
+    enrollment_input.config(state='normal')
+    name_input.config(state='normal')
+    take_img_btn.config(state='normal')
+    train_img_btn.config(state='normal')
+    auto_att_btn.config(state='normal')
+    quit_btn.config(state='normal')
+
+    # Clear the log message
+    log_label.config(text="")
+
+# Extract face features using face_recognition
+def extract_features(image):
+    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    encodings = face_recognition.face_encodings(rgb_image)
+    return encodings[0] if encodings else None
+
+# Function to save student data with serial number to student_data.csv after training
 def save_student_data(enrollment, name):
     try:
         # Read existing data from student_data.csv
@@ -143,72 +236,158 @@ def save_student_data(enrollment, name):
             if enrollment in df['Enrollment'].values:
                 show_error(f"Enrollment {enrollment} is already registered!")
                 return False  # Return False if the record exists
-            
-        # If the record doesn't exist, append it to the CSV
+
+            # Create a new serial number based on the highest existing serial number
+            max_serial = df['Serial Number'].max() if not df.empty else 0
+            new_serial = max_serial + 1
+        else:
+            # If the file doesn't exist, start with serial number 1
+            new_serial = 1
+
+        # Append new student data with serial number
         with open("StudentDetails/student_data.csv", 'a', newline='') as file:
             writer = csv.writer(file)
-            writer.writerow([enrollment, name])
+            writer.writerow([new_serial, enrollment, name])
         return True  # Return True after successfully saving the data
     except Exception as e:
         show_error(f"Error saving student data: {str(e)}")
         return False
 
-# Function to train the model using LBPH
-def train_images():
-    recognizer = cv2.face.LBPHFaceRecognizer_create()  # Using LBPH model for training
-    imagePaths = [os.path.join(TRAINING_IMAGE_PATH, f) for f in os.listdir(TRAINING_IMAGE_PATH)]
+# Function to get today's date in the desired format (e.g., "10_12_2024")
+def get_today_date():
+    return datetime.datetime.now().strftime("%d_%m_%Y")
+
+# Function to get today's attendance file path (based on the date)
+def get_attendance_file_path():
+    today_date = datetime.datetime.now().strftime('%Y-%m-%d')
+    file_name = f"attendance_{today_date}.csv"
+    file_path = os.path.join(ATTENDANCE_LOG_PATH, file_name)
+    return file_path
+# Function to check if the student has already marked attendance today
+def is_attendance_marked_today(enrollment, today_date):
+    file_path = get_attendance_file_path()
     
-    face_samples = []
-    ids = []
+    # Check if the file exists
+    if os.path.exists(file_path):
+        df = pd.read_csv(file_path)
+        # Check if the student has marked attendance for the given date
+        if enrollment in df['Enrollment'].values and today_date in df['Date'].values:
+            return True  # Attendance already marked for this student today
+    return False
 
-    for imagePath in imagePaths:
-        img = Image.open(imagePath).convert('L')  # Convert the image to grayscale ('L' mode)
-        imageNp = np.array(img, 'uint8')  # Convert to NumPy array
-        
-        filename = os.path.basename(imagePath)
-        enrollment_id = int(filename.split("_")[0])  # First part of the filename is the enrollment number
+# Function to log attendance
+def log_attendance(enrollment, name, today_date, present=True):
+    global log_shown
+    global attendance_logged
 
-        # Use face_recognition to detect faces
-        face_locations = face_recognition.face_locations(imageNp)
+    # Get today's attendance file path
+    file_path = get_attendance_file_path()
 
-        for (top, right, bottom, left) in face_locations:
-            face_samples.append(imageNp[top:bottom, left:right])  # Store the grayscale face region
-            ids.append(enrollment_id)
+    # Check if the attendance file exists, if not, create it with headers
+    if os.path.exists(file_path):
+        df = pd.read_csv(file_path)
+    else:
+        df = pd.DataFrame(columns=['Enrollment', 'Name', 'Date', 'Status'])
 
-    recognizer.train(face_samples, np.array(ids))  # Train with grayscale images
-    os.makedirs(TRAINING_LABEL_PATH, exist_ok=True)
-    recognizer.save(f"{TRAINING_LABEL_PATH}/Trainner.yml")  # Save the trained model
-    show_success("Model trained successfully!")
-# Extract face features using face_recognition
-def extract_features(image):
-    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    encodings = face_recognition.face_encodings(rgb_image)
-    return encodings[0] if encodings else None
+    # Check if the student has already been marked present for today
+    if any((df['Enrollment'] == enrollment) & (df['Date'] == today_date)):
+        if not log_shown:  # Only show the message once after 3 seconds if already marked
+            log_label.config(text="Attendance already marked.")
+            window.after(3000, lambda: log_label.config(text=""))  # Clear after 3 seconds
+            log_shown = True
+        attendance_logged = True
+        return "Attendance already marked."
 
-# Function for automatic attendance with retry on timeout
+    # Create a new row to add
+    status = 'Present' if present else 'Absent'
+    new_row = pd.DataFrame([{'Enrollment': enrollment, 'Name': name, 'Date': today_date, 'Status': status}])
+
+    # Add the new row to the DataFrame
+    df = pd.concat([df, new_row], ignore_index=True)
+
+    # Save the updated DataFrame to the file
+    df.to_csv(file_path, index=False)
+
+    # Display thank you message for 4 seconds
+    log_label.config(text=f"Attendance marked for {name}. Thank you.")
+    window.after(4000, lambda: log_label.config(text=""))  # Clear after 4 seconds
+
+    attendance_logged = True
+    return f"Attendance marked for {name} on {today_date}."
+
+# Function to handle retry logic if recognition fails
+# Function to handle retry logic if recognition fails
+def handle_failed_recognition():
+    global retry_count, failed_to_recognize
+
+    if retry_count >= 3:
+        log_label.config(text="Failed to recognize. Retrying...")
+        window.after(2000, lambda: log_label.config(text=""))  # Clear after 2 seconds
+        retry_count = 0
+    else:
+        retry_count += 1
+        failed_to_recognize = True
+
 def automatic_attendance():
+    global cam, running, log_shown, video_label, close_btn, webcam_frame
+
+    # Disable the buttons and inputs while processing
+    enrollment_input.config(state='disabled')
+    name_input.config(state='disabled')
+    take_img_btn.config(state='disabled')
+    train_img_btn.config(state='disabled')
+    auto_att_btn.config(state='disabled')
+    quit_btn.config(state='disabled')
+
+    # Create a new frame for the webcam feed
+    webcam_frame = tk.Frame(window, bg="black")
+    webcam_frame.place(x=630, y=25, width=400, height=250)
+
+    # Add a label for the webcam feed
+    video_label = tk.Label(webcam_frame, bg="black")
+    video_label.pack(expand=True, fill="both")
+
+    # Add a "Close" button for stopping the webcam
+    close_btn = tk.Button(window, text="Close", command=lambda: close_webcam(), bg="red", fg="white", font=('times', 15))
+    close_btn.place(x=900, y=300)
+
+    # Log label for attendance messages
+    log_label = tk.Label(window, text="", bg="lightgrey", fg="green", font=('times', 12, 'bold'))
+    log_label.place(x=800, y=275)
+
+    # Initialize webcam
     model_path = f"{TRAINING_LABEL_PATH}/Trainner.yml"
-    
-    # Check if the model file exists before proceeding
+
+    # Check if the model file exists
     if not os.path.exists(model_path):
+        if len(os.listdir(TRAINING_IMAGE_PATH)) == 0:
+            show_error("No training images found! Please add some training images for face recognition.")
+            close_webcam()  # Close the webcam and return to main page
+            return
         show_error("Model not found. Please train the model first!")
+        close_webcam()  # Close the webcam and return to main page
         return
 
-    recognizer = cv2.face.LBPHFaceRecognizer_create()
-    recognizer.read(model_path)
-    cam = cv2.VideoCapture(0)
+    try:
+        recognizer = cv2.face.LBPHFaceRecognizer_create()
+        recognizer.read(model_path)
+    except cv2.error as e:
+        show_error(f"Error loading model: {e}")
+        close_webcam()  # Close the webcam and return to main page
+        return
 
+    # Initialize the webcam feed only if everything is valid
+    cam = cv2.VideoCapture(0)  # Open webcam
+
+    if not cam.isOpened():
+        show_error("Unable to access the webcam.")
+        close_webcam()  # Close the webcam and return to main page
+        return
+
+    # Load student details and known face encodings
     df = pd.read_csv(STUDENT_DETAILS_PATH)
-    col_names = ['Enrollment', 'Name', 'Date', 'Time']
-    attendance = pd.DataFrame(columns=col_names)
+    known_face_encodings = []
 
-    time_limit = 10  # seconds to wait for face recognition
-    start_time = time.time()
-    recognized = False  # Flag to check if the person has been recognized
-
-    known_face_encodings = []  # Store known face encodings
-
-    # Load and encode known faces from the training set
     for imagePath in os.listdir(TRAINING_IMAGE_PATH):
         img = Image.open(os.path.join(TRAINING_IMAGE_PATH, imagePath))
         img_np = np.array(img)
@@ -216,65 +395,46 @@ def automatic_attendance():
         if face_encoding is not None:
             known_face_encodings.append(face_encoding)
 
-    while True:
+    # Process webcam feed and recognize faces
+    def process_frame():
+        global running, log_shown
+
+        if not cam.isOpened():
+            return  # Skip if camera is not opened correctly
+
         ret, img = cam.read()
         if not ret:
-            continue  # Skip if frame is not captured correctly
+            return
 
-        # Convert to RGB for face_recognition (this is necessary since face_recognition requires RGB format)
         img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-        # Get face locations
         face_locations = face_recognition.face_locations(img_rgb)
+        attendance_logged = False
+        today_date = datetime.datetime.now().strftime('%Y-%m-%d')
 
         for (top, right, bottom, left) in face_locations:
-            # Enhance image and apply multiple recognition patterns
             face_encoding = face_recognition.face_encodings(img_rgb, [(top, right, bottom, left)])
-
-            if face_encoding:  # Only proceed if we have a face encoding
-                face_encoding = face_encoding[0]  # Extract the first (and likely only) face encoding
-
-                # Compare with known faces in the model
+            if face_encoding:
+                face_encoding = face_encoding[0]
                 matches = face_recognition.compare_faces(known_face_encodings, face_encoding)
-
                 if True in matches:
                     match_index = matches.index(True)
                     name = df.iloc[match_index]['Name']
                     enrollment = df.iloc[match_index]['Enrollment']
-                    date = datetime.datetime.now().strftime('%Y-%m-%d')
-                    timeStamp = datetime.datetime.now().strftime('%H:%M:%S')
-                    attendance.loc[len(attendance)] = [enrollment, name, date, timeStamp]
 
-                    cv2.rectangle(img, (left, top), (right, bottom), (0, 255, 0), 2)  # Green rectangle
-                    cv2.putText(img, f"{name} - {enrollment}", (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+                    # Log attendance and mark as present
+                    status = log_attendance(enrollment, name, today_date, present=True)
+                    log_label.config(text=status)
+                    attendance_logged = True
 
-                    # Save attendance when a match is found
-                    attendance.to_csv(ATTENDANCE_LOG_PATH, index=False, mode='a', header=not os.path.exists(ATTENDANCE_LOG_PATH))
+        img_tk = ImageTk.PhotoImage(image=Image.fromarray(img_rgb))
+        video_label.imgtk = img_tk
+        video_label.configure(image=img_tk)
 
-                    # Show success message once attendance is logged
-                    show_success(f"Attendance logged for {name} - {enrollment}")
+        if cam.isOpened():
+            video_label.after(10, process_frame)
 
-                    recognized = True  # Set recognized flag to True
-
-        # Display the frame with bounding boxes and name
-        cv2.imshow("Attendance", img)
-
-        # Check if time has passed and retry if no face was recognized
-        if time.time() - start_time > time_limit and not recognized:
-            show_error("Face recognition timeout! Retrying...")
-            start_time = time.time()  # Reset the timer and retry
-
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
-
-    # Remove duplicates from the attendance dataframe
-    attendance = attendance.drop_duplicates(['Enrollment'], keep='first')
-    cam.release()
-    cv2.destroyAllWindows()
-
-    # Save the attendance log to CSV again after loop ends
-    attendance.to_csv(ATTENDANCE_LOG_PATH, index=False, mode='a', header=not os.path.exists(ATTENDANCE_LOG_PATH))
-    show_success("Attendance logged successfully!")
+    # Start processing frames
+    process_frame()
 
 # GUI components
 enrollment_label = tk.Label(window, text="Enter Enrollment: ", bg="lightgrey", font=('times', 15))
